@@ -36,7 +36,9 @@ public class ShakeService extends Service implements SensorEventListener {
     private static final int PEAKS_NEEDED = 3;          // picos para contar como "agitada"
     private static final long WINDOW_MS = 900;          // los picos tienen que pasar dentro de esta ventana
     private static final long MIN_PEAK_GAP_MS = 90;     // separacion minima entre picos
-    private static final long COOLDOWN_MS = 1500;       // espera despues de cada cambio
+    private static final long COOLDOWN_MS = 1000;       // espera minima despues de cada cambio
+    private static final float CALM_THRESHOLD = 4f;     // por debajo de esto el celu se considera quieto
+    private static final long CALM_MS = 600;            // tiempo quieto necesario para volver a escuchar
     private static final int SAMPLING_US = 20_000;      // 50 lecturas por segundo
     private static final int MAX_LATENCY_US = 250_000;  // despierta al procesador cada 0,25 s como mucho
 
@@ -49,6 +51,8 @@ public class ShakeService extends Service implements SensorEventListener {
     private int peakCount = 0;
     private long lastPeak = 0;
     private long lastToggle = 0;
+    private long lastMotion = 0;
+    private boolean armed = true;
 
     private final CameraManager.TorchCallback torchCallback = new CameraManager.TorchCallback() {
         @Override
@@ -141,7 +145,18 @@ public class ShakeService extends Service implements SensorEventListener {
         // Usa el momento real de cada lectura (llegan en tandas)
         long now = e.timestamp / 1_000_000L;
 
-        if (now - lastToggle < COOLDOWN_MS) return;
+        if (Math.abs(force) > CALM_THRESHOLD) lastMotion = now;
+
+        // Despues de cada cambio, espera a que el celu quede quieto un momento.
+        // Asi una misma agitada no prende y apaga la luz de una.
+        if (!armed) {
+            if (now - lastToggle > COOLDOWN_MS && now - lastMotion > CALM_MS) {
+                armed = true;
+                peakCount = 0;
+            }
+            return;
+        }
+
         if (Math.abs(force) < PEAK_THRESHOLD) return;
         if (now - lastPeak < MIN_PEAK_GAP_MS) return;
         lastPeak = now;
@@ -153,6 +168,7 @@ public class ShakeService extends Service implements SensorEventListener {
         if (peakCount >= PEAKS_NEEDED) {
             peakCount = 0;
             lastToggle = now;
+            armed = false;
             toggleTorch();
         }
     }
@@ -160,17 +176,24 @@ public class ShakeService extends Service implements SensorEventListener {
     private void toggleTorch() {
         if (torchCameraId == null) return;
         try {
-            cameraManager.setTorchMode(torchCameraId, !torchOn);
-            vibrate();
-        } catch (CameraAccessException ignored) {
+            boolean newState = !torchOn;
+            cameraManager.setTorchMode(torchCameraId, newState);
+            torchOn = newState;
+        } catch (Exception ignored) {
             // La camara esta en uso por otra app
+            return;
         }
+        vibrate();
     }
 
     private void vibrate() {
-        Vibrator v = getSystemService(Vibrator.class);
-        if (v != null && v.hasVibrator()) {
-            v.vibrate(VibrationEffect.createOneShot(60, VibrationEffect.DEFAULT_AMPLITUDE));
+        try {
+            Vibrator v = getSystemService(Vibrator.class);
+            if (v != null && v.hasVibrator()) {
+                v.vibrate(VibrationEffect.createOneShot(60, VibrationEffect.DEFAULT_AMPLITUDE));
+            }
+        } catch (Exception ignored) {
+            // Si no puede vibrar, sigue funcionando igual
         }
     }
 
