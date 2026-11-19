@@ -32,9 +32,12 @@ public class ShakeService extends Service implements SensorEventListener {
     private static final int NOTIF_ID = 1;
 
     // Ajustes de deteccion
-    private static final float PEAK_THRESHOLD = 13f;   // m/s2 por encima de la gravedad
-    private static final int PEAKS_NEEDED = 3;          // picos para contar como "agitada"
-    private static final long WINDOW_MS = 900;          // los picos tienen que pasar dentro de esta ventana
+    // Sensibilidad: 0 = baja, 1 = media, 2 = alta
+    // Fuerza minima de cada sacudida (m/s2 por encima de la gravedad) y cantidad de sacudidas
+    private static final float[] THRESHOLDS = {24f, 19f, 15f};
+    private static final int[] PEAKS = {4, 4, 3};
+    private static final int MAX_PEAKS = 4;
+    private static final long WINDOW_MS = 1000;         // las sacudidas tienen que pasar dentro de este tiempo
     private static final long MIN_PEAK_GAP_MS = 90;     // separacion minima entre picos
     private static final long COOLDOWN_MS = 1000;       // espera minima despues de cada cambio
     private static final float CALM_THRESHOLD = 4f;     // por debajo de esto el celu se considera quieto
@@ -47,7 +50,7 @@ public class ShakeService extends Service implements SensorEventListener {
     private String torchCameraId;
     private boolean torchOn = false;
 
-    private final long[] peaks = new long[PEAKS_NEEDED];
+    private final long[] peaks = new long[MAX_PEAKS];
     private int peakCount = 0;
     private long lastPeak = 0;
     private long lastToggle = 0;
@@ -157,7 +160,11 @@ public class ShakeService extends Service implements SensorEventListener {
             return;
         }
 
-        if (Math.abs(force) < PEAK_THRESHOLD) return;
+        if (Math.abs(force) < THRESHOLDS[2]) return;
+        int level = getSharedPreferences(MainActivity.PREFS, Context.MODE_PRIVATE)
+                .getInt(MainActivity.KEY_SENSITIVITY, 1);
+        if (level < 0 || level > 2) level = 1;
+        if (Math.abs(force) < THRESHOLDS[level]) return;
         if (now - lastPeak < MIN_PEAK_GAP_MS) return;
         lastPeak = now;
 
@@ -165,7 +172,7 @@ public class ShakeService extends Service implements SensorEventListener {
         if (peakCount > 0 && now - peaks[0] > WINDOW_MS) peakCount = 0;
         peaks[peakCount++] = now;
 
-        if (peakCount >= PEAKS_NEEDED) {
+        if (peakCount >= PEAKS[level] || peakCount >= MAX_PEAKS) {
             peakCount = 0;
             lastToggle = now;
             armed = false;

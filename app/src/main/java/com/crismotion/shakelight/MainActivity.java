@@ -21,6 +21,7 @@ public class MainActivity extends Activity {
     static final String PREFS = "shake_prefs";
     static final String KEY_ENABLED = "enabled";
     static final String KEY_LOW_POWER = "low_power";
+    static final String KEY_SENSITIVITY = "sensitivity";
 
     private TextView modeText;
 
@@ -83,6 +84,26 @@ public class MainActivity extends Activity {
             modeText.postDelayed(this::refreshMode, 500);
         });
         root.addView(toggle);
+
+        TextView sensLabel = new TextView(this);
+        sensLabel.setText("\nSensibilidad (si se prende sola al caminar, bajala):");
+        sensLabel.setTextSize(16);
+        root.addView(sensLabel);
+
+        android.widget.RadioGroup sens = new android.widget.RadioGroup(this);
+        sens.setOrientation(LinearLayout.HORIZONTAL);
+        String[] names = {"Baja", "Media", "Alta"};
+        for (int i = 0; i < 3; i++) {
+            android.widget.RadioButton rb = new android.widget.RadioButton(this);
+            rb.setId(100 + i);
+            rb.setText(names[i]);
+            rb.setTextSize(16);
+            sens.addView(rb);
+        }
+        sens.check(100 + prefs.getInt(KEY_SENSITIVITY, 1));
+        sens.setOnCheckedChangeListener((g, id) ->
+                prefs.edit().putInt(KEY_SENSITIVITY, id - 100).apply());
+        root.addView(sens);
 
         modeText = new TextView(this);
         modeText.setTextSize(14);
